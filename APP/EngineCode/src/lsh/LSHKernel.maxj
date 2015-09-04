@@ -1,25 +1,133 @@
-package lsh;
+/***
+*/
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.*;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+
+import java.util.ArrayList;
 
 class LSHKernel extends Kernel {
+    
+    // input data type
+    private static DFEType m_inputType;
 
-	private static final DFEType type = dfeInt(32);
+    // output data type for one point in one dim
+    // use formalization before send data into dataflow engine
+    private static DFEType m_outputType;
 
-	protected LSHKernel(KernelParameters parameters) {
-		super(parameters);
+    // dimension of the input data
+    // maxeler can only input by even number
+    private static int m_din;
 
-		DFEVar x = io.input("x", type);
-		DFEVar y = io.input("y", type);
-		DFEVar a = io.scalarInput("a", type);
+    // dimension of the output data, the dimension of LSH function
+    // we can project the data from m_din space to m_dout space
+    private static int m_dout;
 
-		// TODO replace with your computation
-		DFEVar sum = x + y + a;
+    protected LSHKernel(KernelParameters kp, LSHParameters parameters) {
+        super(kp);
+        
+        m_inputType = parameters.getInputType();
+        m_din = parameters.getDIn();
+        m_dout = parameters.getDOut();
+        m_outputType = parameters.getOutputType();
 
-		io.output("s", sum, type);
-	}
+        DFEVectorType<DFEVar> inputType = new DFEVectorType<DFEVar>(m_inputType, m_din);
+        DFEVector<DFEVar> input = io.input("input", inputType);
+        
+        // the first dimension means a hash function
+        // the second dimension means the parameters in a function
+        ArrayList<ArrayList<DFEVar> > hashFunction = new ArrayList<ArrayList<DFEVar>>();
+        setHashFunction(hashFunction);
+    
+        // step1 : do projection
+        ArrayList<ArrayList<DFEVar> > multiply = doProjection(input, hashFunction);
+
+        // step2 : add each dimension
+        ArrayList<DFEVar> hashCoordinate = addProjection(multiply);
+        
+        // the cell width is set from the scalarInput
+        DFEVar cellWidth = io.scalarInput("cellWidth", m_inputType);
+
+        // step3 : do the divide, also cast from float to int16
+        ArrayList<DFEVar> result = doDivide(hashCoordinate, cellWidth);
+        
+        // for every input point(m_din dimensions), we output 2 int64_t to represent the HashCode
+        // actually it is represented in 16 int8_t for convenience in the hardware.
+        // in CPU, the HashType will be defined as std::pair<int64_t, int64_t>
+        DFEVectorType<DFEVar> outputType = new DFEVectorType<DFEVar>(m_outputType, m_dout);
+
+        // step4 : set the output
+        // the moveBitAndAdd function is not needed any more, because the output is already int16_t
+        String outName = "output";
+        DFEVector<DFEVar> output = outputType.newInstance(this);
+        for(int j=0; j<m_dout; j++){
+            // must use TRUNCATE method to assign points to the correct cell
+            // still have problem when the number is XXXX.0
+            DFEVar upzero = result[j] >= constant.var(m_inputType, 0.0);
+            DFEVar offset = upzero ? (result[j] - constant.var(m_inputType, 0.5)) : (result[j] + constant.var(m_inputType, 0.5));
+            output[j] <== offset.cast(m_outputType);
+        }
+
+        io.output(outName, output, output.getType());
+    } 
+    
+    private void setHashFunction(ArrayList<ArrayList<DFEVar> > hashFunction){
+        for(int i=0; i<m_dout; i++){
+            ArrayList<DFEVar> oneFunc = new ArrayList<DFEVar>();
+            // use scalar input to get all the parameters
+            for(int j=0; j<m_din; j++){
+                String name = String.format("hashFunction%04d", i*m_din+j);
+                DFEVar temp = io.scalarInput(name, m_inputType);
+                oneFunc.add(temp);
+            }
+            hashFunction.add(oneFunc);
+        }
+    }
+
+    private ArrayList<ArrayList<DFEVar> > doProjection(DFEVector<DFEVar> input, ArrayList<ArrayList<DFEVar> > hashFunction){
+        ArrayList<ArrayList<DFEVar> > multiply = new ArrayList<ArrayList<DFEVar> >();
+        for(int i=0; i<m_dout; i++){
+            // oneDim means the multiply result of one dimension
+            ArrayList<DFEVar> oneDim = new ArrayList<DFEVar>();
+            for(int j=0; j<m_din; j++){
+                DFEVar ans = input[j] * hashFunction[i][j];
+                oneDim.add(ans);
+            }
+            multiply.add(oneDim);
+        }
+        return multiply;
+    }
+    
+    private ArrayList<DFEVar> addProjection(ArrayList<ArrayList<DFEVar> > multiply){
+        ArrayList<DFEVar> hashCoordinate = new ArrayList<DFEVar>();
+        for(int i=0; i<m_dout; i++){
+            DFEVar sum = adderTree(multiply[i]);
+            hashCoordinate.add(sum);
+        }
+        return hashCoordinate;
+    }
+    
+    private ArrayList<DFEVar> doDivide(ArrayList<DFEVar> minus, DFEVar cellWidth){
+        ArrayList<DFEVar> result = new ArrayList<DFEVar>();
+        for(int i=0; i<m_dout; i++){
+            result.add( minus[i] / cellWidth);
+        }
+        return result;
+    }
+    
+    private DFEVar adderTree(ArrayList<DFEVar> cell){
+        ArrayList<DFEVar> sum = new ArrayList<DFEVar>();
+        for(int i=0; i<cell.size() / 2; i++){
+            sum.add( cell[2 * i] + cell[2 * i + 1] );
+        }
+        if(cell.size() % 2 == 1){
+            sum.add( cell[cell.size() - 1] );
+        }
+        return sum.size() == 1 ? sum[0] : adderTree(sum);
+    }
 
 }
+

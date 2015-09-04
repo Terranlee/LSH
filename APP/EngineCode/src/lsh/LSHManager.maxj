@@ -1,59 +1,100 @@
-
-package lsh;
-
-import com.maxeler.maxcompiler.v2.managers.BuildConfig;
-import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
-import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+/***
+    The manager for this design just streams data from CPU to DFE and back via PCI-E.
+*/
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+// add this if you want to use LMEM
+/*
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MemoryControlGroup;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface.Direction;
+*/
 
-public class LSHManager extends CustomManager {
+public class LSHManager extends CustomManager{
 
-	private static final String s_kernelName = "LSHKernel";
-	
-	public LSHManager(LSHEngineParameters engineParameters) {
-		super(engineParameters);
+    private static final String s_kernelName  = "LSHKernel";
 
-		KernelBlock block = addKernel(new LSHKernel(makeKernelParameters(s_kernelName)));
+    LSHManager(LSHParameters params) {
+        super(params);
 
-		for (String inputName: block.getAllInputs())
-			block.getInput(inputName).connect(addStreamFromCPU(inputName));
-		for (String outputName: block.getAllOutputs())
-			addStreamToCPU(outputName).connect(block.getOutput(outputName));
+        KernelBlock k =
+        addKernel(new LSHKernel(makeKernelParameters(s_kernelName), params));
+        
+        addConstant(params);
 
-		createSLiCinterface(modeDefault());
+        k.getInput("input") <== addStreamFromCPU("input_cpu");
+        addStreamToCPU("output_cpu") <== k.getOutput("output");
 
-		configBuild(engineParameters);
-	}
+        // create basic SLiC interface
+        createSLiCinterface(interfaceDefault(params));
 
-	private static EngineInterface modeDefault() {
-		EngineInterface engine_interface = new EngineInterface();
-		CPUTypes   type = CPUTypes.INT32;
-		int        size = type.sizeInBytes();
+        // add this if you need to use LMEM
+        //addStreamToOnCardMemory("cpu2LMEM", MemoryControlGroup.MemoryAccessPattern.LINEAR_1D) <== addStreamFromCPU("input_cpu");
+        //k.getInput("input") <== addStreamFromOnCardMemory("inputLMEM", MemoryControlGroup.MemoryAccessPattern.LINEAR_1D);
+        // create SLiC interface for the LMEM
+        //createSLiCinterface(interfaceWriteLMEM("writeLMEM", params));
+    }
+    
+    private void addConstant(LSHParameters param){
+        addMaxFileConstant("din",        param.getDIn());
+        addMaxFileConstant("dout",        param.getDOut());
+    }
+    
+    /*
+    // SLiC interface for LMEM
+    private static EngineInterface interfaceWriteLMEM(String name, LSHParameters param){
+        int din = param.getDIn();
 
-		InterfaceParam  a    = engine_interface.addParam("A", CPUTypes.INT);
-		InterfaceParam  N    = engine_interface.addParam("N", CPUTypes.INT);
+        EngineInterface ei = new EngineInterface(name);
+        InterfaceParam N = ei.addParam("N", CPUTypes.INT);
+        InterfaceParam zero = ei.addConstant(0l);//param("start", TYPE)
+        
+        ei.setStream("input_cpu1", CPUTypes.FLOAT, N * CPUTypes.FLOAT.sizeInBytes() * din);
+        ei.setLMemLinear("cpu2LMEM", zero, N * CPUTypes.FLOAT.sizeInBytes() * din);
 
-		engine_interface.setScalar(s_kernelName, "a", a);
+        ei.ignoreAll(Direction.IN_OUT);
+        return ei;
+    }
+    */
 
-		engine_interface.setTicks(s_kernelName, N);
-		engine_interface.setStream("x",   type, N * size);
-		engine_interface.setStream("y",   type, N * size);
-		engine_interface.setStream("s", type, N * size);
-		return engine_interface;
-	}
-	
-	private void configBuild(LSHEngineParameters params) {
-		BuildConfig buildConfig = getBuildConfig();
-		buildConfig.setMPPRCostTableSearchRange(params.getMPPRStartCT(), params.getMPPREndCT());
-		buildConfig.setMPPRParallelism(params.getMPPRThreads());
-		buildConfig.setMPPRRetryNearMissesThreshold(params.getMPPRRetryThreshold());
-	}
-	
-	public static void main(String[] args) {
-		LSHManager manager = new LSHManager(new LSHEngineParameters(args));
-		manager.build();
-	}
+    private static EngineInterface interfaceDefault(LSHParameters param) {
+        int din = param.getDIn();
+        int dout = param.getDOut();
+
+        EngineInterface engine_interface = new EngineInterface();
+        
+        // the parameter N is the number of input points
+        InterfaceParam N = engine_interface.addParam("N", CPUTypes.INT);
+        engine_interface.setTicks(s_kernelName, N);
+        InterfaceParam cellWidth = engine_interface.addParam("cellWidth", CPUTypes.FLOAT);
+        engine_interface.setScalar(s_kernelName, "cellWidth", cellWidth);
+
+        engine_interface.setStream("input_cpu", CPUTypes.FLOAT, N * CPUTypes.FLOAT.sizeInBytes() * din);
+    
+        // set scalar input for all hash function parameters
+        for(int i=0; i<dout; i++){
+            for(int j=0; j<din; j++){
+                String name = String.format("hashFunction%04d", i*din+j);
+                InterfaceParam hash = engine_interface.addParam(name, CPUTypes.FLOAT);
+                engine_interface.setScalar(s_kernelName, name, hash);
+            }
+        }
+
+        String toCPUName = "output_cpu";
+        engine_interface.setStream(toCPUName, CPUTypes.INT64, N * CPUTypes.INT64.sizeInBytes() * 2);
+        
+        // add this if kernel get data from LMEM
+        //InterfaceParam zero = engine_interface.addConstant(0l);
+        //engine_interface.setLMemLinear("inputLMEM", zero, N * CPUTypes.FLOAT.sizeInBytes() * din);
+            
+        return engine_interface;
+    }
+
+    public static void main(String[] args) {
+        LSHManager manager = new LSHManager(new LSHParameters(args));
+        manager.build();
+    }
 }
 
