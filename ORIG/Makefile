@@ -1,20 +1,18 @@
-NAME		= LSH
-EXEC		= $(NAME)
+CXX=g++
+CXXFLAGS=-std=c++11 -Wall -O3 -DBOOST_UBLAS_NDEBUG
+TARGET=main
 
-CC		= gcc
-CFLAGS		= -std=gnu99 -Wall
-LDFLAGS		= -lm
+SRC=$(shell ls *.cpp)
 
-OBJ		= LSH.o
+all: $(TARGET)
 
-all:		run
+$(TARGET): $(SRC:.cpp=.o)
+	$(CXX) $(CXXFLAGS) $+ -o $@
 
-$(EXEC):	$(OBJ)
-		$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
-
-run:		$(EXEC)
-
-.INTERMEDIATE:	$(OBJ)
+-include $(SRC:.cpp=.d)
 
 clean:
-		rm $(EXEC)	
+	$(RM) *.o *.d $(TARGET)
+
+.PHONY: all clean
+
