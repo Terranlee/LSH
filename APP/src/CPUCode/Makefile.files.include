@@ -1,5 +1,0 @@
-#
-# This file is managed by MaxIDE. Do NOT change.
-#
-HEADERS:= lsh_dfe.h
-SOURCES:= test_dfe.cpp lsh_dfe.cpp

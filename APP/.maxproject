@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<maxCompilerManager version="2">
-<enginePart internalEngineSubproject="LSH_EngineCode" isSrcBin="false" isUseDefaultSelected="false" outputLocation="/LSH_EngineCode/bin" projectName="LSH"/>
-<cpuPart internalCpuSubproject="LSH_CPUCode"/>
-<watchedFiles/>
-</maxCompilerManager>
