@@ -1,14 +1,10 @@
-=======
 Credits
 =======
 
 Development Lead
 ----------------
 
-* Tianrun Li <ltrthu@163.com>
+* Tianrun Li, Tsinghua University, <ltrthu@163.com>  
+* Xinyu Niu, Imperial College London  
+* Wayne Luk, Imperial College London  
 
-
-Contributors
-------------
-
-None yet. Why not be the first?
