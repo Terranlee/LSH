@@ -14,16 +14,16 @@ Locality Sensitive Hashing(LSH) is a useful technique in nearest neighbor search
 Usage
 -----
 
-APP directory consists of the CPU version and dataflow version of LSH, it also includes some tests to compare the performance and make sure of the accuracy.  
-ORIG directory consists of the original CPU version of LSH, you can use code in this directory to get familiar with LSH.  
-DOC directory consists of a brief description of LSH method, and the hashing function we use. It also includes some analysis about the performance.  
+* APP directory consists of the CPU version and dataflow version of LSH, it also includes some tests to compare the performance and make sure of the accuracy. See APP/README.md for details about compiling and running the code.   
+* ORIG directory consists of the original CPU version of LSH, you can use code in this directory to get familiar with LSH. See ORIG/README.md for details about compiling and running the code.   
+* DOC directory consists of a brief description of LSH method, and the hashing function we use. It also includes some analysis about the performance.  
 
 
 Features
 --------
 
 LSH is completely a stream based algorithm with no dependencies, and can be accelerated well using dataflow engine.  
-
+We can get tens of times of acceleration when the dataset is very large, and the resource use is not very large(less than 20% of the total resource for the LSHKernel in APP directory), so the performance can be better if we duplicate kernels in one FPGA.  
 
 To-Do
 -----
