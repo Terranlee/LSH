@@ -38,5 +38,5 @@ include $(WHEREISROOT)/Makefile.Maia.hardware
 # Include this makefile when you are doing unity test
 #include $(WHEREISROOT)/Makefile.unity.common
 
-# Include this makefile when you are doing a real DBSCAN computation on DFE
+# Include this makefile when you are doing a real LSH computation on DFE
 include $(WHEREISROOT)/Makefile.lsh.common

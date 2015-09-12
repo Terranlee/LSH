@@ -1,5 +1,5 @@
-#ifndef __DBSCAN_DFE_H__
-#define __DBSCAN_DFE_H__
+#ifndef __LSH_DFE_H__
+#define __LSH_DFE_H__
 
 #include <vector>
 #include <boost/numeric/ublas/matrix.hpp>
